@@ -32,25 +32,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         from data.market_data import fetcher
         from core.brain import brain
+        from main import _extract_stock_mentions
 
-        # Build live context
-        nifty = fetcher.get_index_quote("NIFTY 50")
-        fii = fetcher.get_fii_dii_data()
-        context_lines = []
+        # Detect stock mentions + build full market context
+        stocks = _extract_stock_mentions(user_msg)
+        context = fetcher.build_market_context(extra_stocks=stocks)
+        enriched = context + "\n\nUser: " + user_msg
 
-        if nifty and nifty.get("last"):
-            context_lines.append(
-                f"[LIVE DATA] NIFTY 50: {nifty['last']} "
-                f"(Change: {nifty['change']:+.1f}, {nifty['pchange']:+.2f}%) "
-                f"High: {nifty['high']} Low: {nifty['low']}"
-            )
-        if fii and fii.get("date"):
-            context_lines.append(
-                f"[LIVE DATA] FII/DII ({fii['date']}): "
-                f"FII Net {fii['fii_net']:+,.0f} Cr, DII Net {fii['dii_net']:+,.0f} Cr"
-            )
-
-        enriched = "\n".join(context_lines) + "\n\nUser: " + user_msg if context_lines else user_msg
         response = brain.chat(enriched)
         await update.message.reply_text(response)
 

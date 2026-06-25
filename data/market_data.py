@@ -58,6 +58,90 @@ class MarketDataFetcher:
                     }
         except Exception as e:
             print(f"[ERROR] Index quote failed: {e}")
+
+    def get_all_indices(self) -> list:
+        """Get all major Indian indices in one call."""
+        try:
+            url = f"{NSE_BASE}/api/allIndices"
+            r = self.session.get(url, timeout=10)
+            data = r.json()
+            wanted = {
+                "NIFTY 50", "NIFTY BANK", "NIFTY FIN SERVICE",
+                "NIFTY MIDCAP 100", "INDIA VIX", "NIFTY IT",
+                "NIFTY PHARMA", "NIFTY AUTO", "NIFTY FMCG",
+                "NIFTY NEXT 50", "NIFTY REALTY", "NIFTY METAL",
+                "NIFTY ENERGY", "NIFTY INFRA"
+            }
+            results = []
+            for item in data.get("data", []):
+                if item.get("indexSymbol") in wanted:
+                    results.append({
+                        "symbol": item.get("indexSymbol"),
+                        "last": item.get("last"),
+                        "pchange": item.get("percentChange"),
+                        "change": item.get("variation"),
+                    })
+            return results
+        except Exception as e:
+            print(f"[ERROR] All indices failed: {e}")
+            return []
+
+    def get_stock_quote(self, ticker: str) -> dict:
+        """
+        Get live stock price for any NSE stock via Yahoo Finance.
+        ticker: NSE symbol like RELIANCE, HDFC, TCS etc.
+        """
+        try:
+            import yfinance as yf
+            t = yf.Ticker(f"{ticker}.NS")
+            info = t.fast_info
+            price = info.last_price or 0
+            prev = info.previous_close or price
+            return {
+                "symbol": ticker,
+                "price": round(price, 2),
+                "prev_close": round(prev, 2),
+                "change_pct": round((price - prev) / prev * 100, 2) if prev else 0,
+                "high": round(info.day_high or price, 2),
+                "low": round(info.day_low or price, 2),
+            }
+        except Exception as e:
+            print(f"[ERROR] Stock quote {ticker} failed: {e}")
+            return {}
+
+    def build_market_context(self, extra_stocks: list = None) -> str:
+        """
+        Build a rich [LIVE DATA] context string for AI injection.
+        Includes all indices + FII/DII + optional specific stocks.
+        """
+        lines = [f"[LIVE MARKET DATA — {datetime.now().strftime('%d %b %Y %H:%M')} IST]"]
+
+        # All indices
+        indices = self.get_all_indices()
+        if indices:
+            lines.append("\nINDICES:")
+            for idx in indices:
+                arrow = "+" if (idx["pchange"] or 0) >= 0 else ""
+                lines.append(f"  {idx['symbol']}: {idx['last']} ({arrow}{idx['pchange']:.2f}%)")
+
+        # FII/DII
+        fii = self.get_fii_dii_data()
+        if fii and fii.get("date"):
+            lines.append(f"\nFII/DII ({fii['date']}):")
+            lines.append(f"  FII Net: {fii['fii_net']:+,.0f} Cr | DII Net: {fii['dii_net']:+,.0f} Cr")
+
+        # Extra stocks if requested
+        if extra_stocks:
+            lines.append("\nSTOCKS:")
+            for sym in extra_stocks:
+                q = self.get_stock_quote(sym)
+                if q:
+                    lines.append(
+                        f"  {sym}: ₹{q['price']} ({q['change_pct']:+.2f}%) "
+                        f"H:{q['high']} L:{q['low']}"
+                    )
+
+        return "\n".join(lines)
         return {}
 
     def get_option_chain(self, symbol: str = "NIFTY") -> dict:

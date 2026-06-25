@@ -181,34 +181,37 @@ async def root():
         return f.read()
 
 
+def _extract_stock_mentions(text: str) -> list:
+    """Extract NSE stock symbols mentioned in user message for live price lookup."""
+    import re
+    # Common NSE large-cap symbols
+    known = {
+        "RELIANCE", "TCS", "INFY", "HDFCBANK", "ICICIBANK", "SBIN", "AXISBANK",
+        "KOTAKBANK", "HINDUNILVR", "ITC", "BHARTIARTL", "WIPRO", "HCLTECH",
+        "ASIANPAINT", "MARUTI", "BAJFINANCE", "BAJAJFINSV", "TITAN", "NESTLEIND",
+        "ULTRACEMCO", "SUNPHARMA", "DRREDDY", "CIPLA", "DIVISLAB", "APOLLOHOSP",
+        "TATAMOTORS", "TATASTEEL", "HINDALCO", "JSWSTEEL", "COALINDIA",
+        "ONGC", "NTPC", "POWERGRID", "ADANIPORTS", "ADANIENT", "TECHM",
+        "LTIM", "LT", "M&M", "EICHERMOT", "BAJAJ-AUTO", "HEROMOTOCO",
+        "INDUSINDBK", "GRASIM", "BPCL", "IOC", "PIDILITIND", "DABUR",
+        "BRITANNIA", "TATACONSUM", "HDFCLIFE", "SBILIFE", "ICICIPRULI",
+    }
+    words = set(re.findall(r'\b[A-Z][A-Z0-9&\-]{2,14}\b', text.upper()))
+    return list(words & known)
+
+
 @app.post("/chat")
 async def chat(msg: ChatMessage):
-    """2-way chat with Trade Buddy — injects live market context"""
+    """2-way chat — injects full market context (all indices + relevant stocks)."""
     try:
         from data.market_data import fetcher
 
-        # Inject live NIFTY price so AI never uses stale training data levels
-        nifty = fetcher.get_index_quote("NIFTY 50")
-        fii = fetcher.get_fii_dii_data()
+        # Detect any stock names mentioned
+        stocks = _extract_stock_mentions(msg.message)
 
-        context_lines = []
-        if nifty and nifty.get("last"):
-            context_lines.append(
-                f"[LIVE DATA] NIFTY 50 aaj: {nifty['last']} "
-                f"(Change: {nifty['change']:+.1f}, {nifty['pchange']:+.2f}%) "
-                f"High: {nifty['high']} Low: {nifty['low']}"
-            )
-        if fii and fii.get("date"):
-            context_lines.append(
-                f"[LIVE DATA] FII/DII ({fii['date']}): "
-                f"FII Net {fii['fii_net']:+,.0f} Cr, DII Net {fii['dii_net']:+,.0f} Cr"
-            )
-
-        # Prepend live context to every message
-        if context_lines:
-            enriched = "\n".join(context_lines) + "\n\nUser: " + msg.message
-        else:
-            enriched = msg.message
+        # Build rich live context
+        context = fetcher.build_market_context(extra_stocks=stocks)
+        enriched = context + "\n\nUser: " + msg.message
 
         response = brain.chat(enriched)
         return {"response": response, "time": datetime.now().strftime("%H:%M:%S")}
