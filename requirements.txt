@@ -13,5 +13,6 @@ python-telegram-bot==21.6
 aiohttp
 smartapi-python
 logzero
+websocket-client
 pyotp
 yfinance
