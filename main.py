@@ -393,6 +393,30 @@ async def get_fii_dii():
     return fetcher.get_fii_dii_data()
 
 
+@app.get("/debug/fii-dii-raw")
+async def debug_fii_dii_raw():
+    """Debug: returns raw NSE API response for FII/DII diagnosis"""
+    import httpx
+    results = {}
+    endpoints = [
+        "https://www.nseindia.com/api/fiidiiTradeReact",
+        "https://www.nseindia.com/api/fiiDiiData",
+    ]
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept": "application/json",
+        "Referer": "https://www.nseindia.com",
+    }
+    async with httpx.AsyncClient(headers=headers, follow_redirects=True) as client:
+        for url in endpoints:
+            try:
+                r = await client.get(url, timeout=10)
+                results[url] = {"status": r.status_code, "body": r.text[:2000]}
+            except Exception as e:
+                results[url] = {"error": str(e)}
+    return results
+
+
 # ============================================
 # ENTRY POINT
 # ============================================
