@@ -12,5 +12,6 @@ google-auth==2.35.0
 python-telegram-bot==21.6
 aiohttp
 smartapi-python
+logzero
 pyotp
 yfinance

@@ -245,22 +245,7 @@ def _extract_stock_mentions(text: str) -> list:
         "TATACONSUM","UBL","VSTIND",
     }
     words = set(re.findall(r'\b[A-Z][A-Z0-9&\-]{1,14}\b', text.upper()))
-    matched = list(words & known)
-
-    # Smart fallback: try any remaining ALL-CAPS word (3-10 chars) as NSE ticker
-    remainder = words - known
-    for word in remainder:
-        if 3 <= len(word) <= 10 and word.isalpha():
-            try:
-                import yfinance as yf
-                t = yf.Ticker(f"{word}.NS")
-                p = t.fast_info.last_price
-                if p and p > 0:
-                    matched.append(word)
-            except Exception:
-                pass
-
-    return matched
+    return list(words & known)
 
 
 @app.post("/chat")
