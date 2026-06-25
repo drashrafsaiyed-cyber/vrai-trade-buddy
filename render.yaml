@@ -19,6 +19,14 @@ services:
         value: 8000
       - key: PYTHONIOENCODING
         value: utf-8
+      - key: ANGELONE_API_KEY
+        sync: false
+      - key: ANGELONE_CLIENT_ID
+        sync: false
+      - key: ANGELONE_PIN
+        sync: false
+      - key: ANGELONE_TOTP_SECRET
+        sync: false
       - key: GROWW_API_KEY
         sync: false
       - key: GROWW_API_SECRET

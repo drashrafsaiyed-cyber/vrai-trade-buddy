@@ -12,3 +12,5 @@ google-auth==2.35.0
 python-telegram-bot==21.6
 aiohttp==3.10.10
 growwapi
+smartapi-python
+pyotp

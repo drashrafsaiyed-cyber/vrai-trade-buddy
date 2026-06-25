@@ -103,29 +103,45 @@ async def job_exit_reminder():
 # ============================================
 # APP LIFECYCLE
 # ============================================
+_tg_app = None
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
-    print("🚀 VRAI Trade Buddy starting up...")
+    global _tg_app
+    print("VRAI Trade Buddy starting up...")
 
     # Schedule jobs
     scheduler.add_job(job_morning_brief, "cron", hour=8, minute=30)
     scheduler.add_job(job_exit_reminder, "cron", hour=9, minute=15)
     scheduler.add_job(job_gamma_blast, "interval", minutes=5)
     scheduler.add_job(job_btst_scan, "cron", hour=14, minute=0)
-
     scheduler.start()
-    print("✅ Scheduler started. Jobs scheduled:")
-    print("   8:30 AM - Morning Brief")
-    print("   9:15 AM - Exit Reminder")
-    print("   Every 5 min - Gamma Blast Scan")
-    print("   2:00 PM - BTST Scan")
+    print("Scheduler started (8:30 brief / 9:15 exit / 2:00 BTST / 5min gamma)")
+
+    # Start two-way Telegram bot
+    try:
+        from notifications.telegram_bot import build_application
+        _tg_app = build_application()
+        await _tg_app.initialize()
+        await _tg_app.start()
+        await _tg_app.updater.start_polling(drop_pending_updates=True)
+        print("Telegram bot polling started — two-way chat active")
+    except Exception as e:
+        print(f"Telegram bot start failed: {e}")
 
     yield
 
     # Shutdown
+    if _tg_app:
+        try:
+            await _tg_app.updater.stop()
+            await _tg_app.stop()
+            await _tg_app.shutdown()
+        except Exception:
+            pass
     scheduler.shutdown()
-    print("👋 Trade Buddy shutting down...")
+    print("Trade Buddy shutting down...")
 
 
 # ============================================
