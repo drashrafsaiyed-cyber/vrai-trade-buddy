@@ -107,6 +107,27 @@ class MarketDataFetcher:
             print(f"[ERROR] Stock quote {ticker} failed: {e}")
             return {}
 
+    def get_sensex(self) -> dict:
+        """Fetch SENSEX (BSE) from Yahoo Finance — NSE API doesn't carry BSE data."""
+        try:
+            import yfinance as yf
+            t = yf.Ticker("^BSESN")
+            info = t.fast_info
+            price = info.last_price or 0
+            prev = info.previous_close or price
+            return {
+                "symbol": "S&P BSE SENSEX",
+                "last": round(price, 2),
+                "open": round(info.open or price, 2),
+                "high": round(info.day_high or price, 2),
+                "low": round(info.day_low or price, 2),
+                "pchange": round((price - prev) / prev * 100, 2) if prev else 0,
+                "change": round(price - prev, 2),
+            }
+        except Exception as e:
+            print(f"[ERROR] SENSEX fetch failed: {e}")
+            return {}
+
     def build_market_context(self, extra_stocks: list = None) -> str:
         """
         Build a rich [LIVE DATA] context string for AI injection.
@@ -116,6 +137,11 @@ class MarketDataFetcher:
 
         # All indices — grouped
         indices = self.get_all_indices()
+        # Inject SENSEX from Yahoo Finance (BSE index, not on NSE API)
+        sensex = self.get_sensex()
+        if sensex:
+            indices = [sensex] + [i for i in indices if i.get("symbol") != "S&P BSE SENSEX"]
+
         if indices:
             # Priority order for display
             priority = [
