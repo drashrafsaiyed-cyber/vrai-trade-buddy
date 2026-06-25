@@ -248,6 +248,18 @@ async def health():
     }
 
 
+@app.get("/my-ip")
+async def my_ip():
+    """Returns this server's outbound IP — needed for Angel One SmartAPI whitelist"""
+    import httpx
+    try:
+        async with httpx.AsyncClient() as client:
+            r = await client.get("https://api.ipify.org?format=json", timeout=5)
+            return r.json()
+    except Exception:
+        return {"ip": "unavailable"}
+
+
 @app.get("/market/walls")
 async def get_oi_walls(symbol: str = "NIFTY"):
     """Get current OI walls for a symbol"""
