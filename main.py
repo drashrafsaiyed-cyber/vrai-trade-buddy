@@ -167,9 +167,34 @@ async def root():
 
 @app.post("/chat")
 async def chat(msg: ChatMessage):
-    """2-way chat with Trade Buddy"""
+    """2-way chat with Trade Buddy — injects live market context"""
     try:
-        response = brain.chat(msg.message)
+        from data.market_data import fetcher
+
+        # Inject live NIFTY price so AI never uses stale training data levels
+        nifty = fetcher.get_index_quote("NIFTY 50")
+        fii = fetcher.get_fii_dii_data()
+
+        context_lines = []
+        if nifty and nifty.get("last"):
+            context_lines.append(
+                f"[LIVE DATA] NIFTY 50 aaj: {nifty['last']} "
+                f"(Change: {nifty['change']:+.1f}, {nifty['pchange']:+.2f}%) "
+                f"High: {nifty['high']} Low: {nifty['low']}"
+            )
+        if fii and fii.get("date"):
+            context_lines.append(
+                f"[LIVE DATA] FII/DII ({fii['date']}): "
+                f"FII Net {fii['fii_net']:+,.0f} Cr, DII Net {fii['dii_net']:+,.0f} Cr"
+            )
+
+        # Prepend live context to every message
+        if context_lines:
+            enriched = "\n".join(context_lines) + "\n\nUser: " + msg.message
+        else:
+            enriched = msg.message
+
+        response = brain.chat(enriched)
         return {"response": response, "time": datetime.now().strftime("%H:%M:%S")}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -229,6 +254,42 @@ async def get_oi_walls(symbol: str = "NIFTY"):
     from data.market_data import fetcher
     walls = fetcher.find_oi_walls(symbol)
     return walls
+
+
+@app.get("/market/oi-chat-context")
+async def get_oi_chat_context(symbol: str = "NIFTY"):
+    """
+    Returns OI wall data formatted as a chat-ready string.
+    If OI data unavailable, returns honest message so AI doesn't hallucinate.
+    """
+    from data.market_data import fetcher
+    walls = fetcher.find_oi_walls(symbol)
+    nifty = fetcher.get_index_quote("NIFTY 50")
+
+    spot = nifty.get("last", 0) if nifty else 0
+
+    if walls and walls.get("spot") and walls.get("ce_walls"):
+        ce = walls["ce_walls"]
+        pe = walls["pe_walls"]
+        ce_str = ", ".join([f"{w['strike']} (OI: {w['oi']:,})" for w in ce])
+        pe_str = ", ".join([f"{w['strike']} (OI: {w['oi']:,})" for w in pe])
+        context = (
+            f"[LIVE OI DATA] {symbol} — Spot: {walls['spot']:,.2f}, "
+            f"Expiry: {walls.get('expiry', 'N/A')}, PCR: {walls['pcr']:.2f}\n"
+            f"CE Walls (Resistance): {ce_str}\n"
+            f"PE Walls (Support): {pe_str}\n\n"
+            f"Iske basis pe VRAI analysis do. Exact strikes use karo."
+        )
+    else:
+        context = (
+            f"[NOTE] NSE option chain data abhi available nahi hai (API blocked). "
+            f"NIFTY current price: {spot:,.2f}. "
+            f"Kripya specific OI strike levels mat batao — "
+            f"sirf current price pe general analysis do aur clearly bolo "
+            f"ki OI data unavailable hai aaj."
+        )
+
+    return {"context": context, "has_oi_data": bool(walls and walls.get("ce_walls"))}
 
 
 @app.get("/market/fii-dii")

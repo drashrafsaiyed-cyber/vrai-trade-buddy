@@ -255,7 +255,7 @@
       <button class="action-btn" onclick="triggerScan('btst')">🎯 BTST Scan Now</button>
       <button class="action-btn" onclick="triggerScan('gamma')">⚡ Gamma Blast Check</button>
       <button class="action-btn" onclick="askBuddy('Aaj market ka kya scene hai?')">📊 Market Sentiment</button>
-      <button class="action-btn" onclick="askBuddy('Nifty OI walls kahan hain aaj?')">🧱 OI Walls</button>
+      <button class="action-btn" onclick="askOIWalls()">🧱 OI Walls</button>
       <button class="action-btn" onclick="askBuddy('FII DII aaj kya kar rahe hain?')">💰 FII/DII Update</button>
       <button class="action-btn danger" onclick="askBuddy('Mujhe aaj trade karna chahiye ya nahi?')">🤔 Should I Trade?</button>
     </div>
@@ -382,6 +382,27 @@ Aaj kya scene hai?</div>
   function askBuddy(msg) {
     document.getElementById('chatInput').value = msg;
     sendMessage();
+  }
+
+  async function askOIWalls() {
+    // Fetch real OI context first so AI uses actual data, not hallucinated levels
+    setLoading(true);
+    addMessage('user', 'NIFTY OI walls kahan hain aaj?');
+    try {
+      const ctx = await fetch('/market/oi-chat-context?symbol=NIFTY');
+      const data = await ctx.json();
+      const res = await fetch('/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: data.context })
+      });
+      const result = await res.json();
+      addMessage('buddy', result.response, result.time);
+    } catch (e) {
+      addMessage('buddy', 'OI data fetch mein problem aayi. Thodi der baad try karo.', '');
+    } finally {
+      setLoading(false);
+    }
   }
 
   function escapeHtml(text) {
