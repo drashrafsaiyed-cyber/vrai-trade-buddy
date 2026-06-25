@@ -10,8 +10,7 @@ requests==2.32.3
 gspread==6.1.2
 google-auth==2.35.0
 python-telegram-bot==21.6
-aiohttp==3.10.10
-growwapi
+aiohttp
 smartapi-python
 pyotp
 yfinance
