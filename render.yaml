@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: vrai-trade-buddy
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
+    envVars:
+      - key: NVIDIA_API_KEY
+        sync: false
+      - key: NVIDIA_BASE_URL
+        value: https://integrate.api.nvidia.com/v1
+      - key: NVIDIA_MODEL
+        value: meta/llama-3.3-70b-instruct
+      - key: TELEGRAM_BOT_TOKEN
+        value: ADD_TOMORROW
+      - key: TELEGRAM_CHAT_ID
+        value: ADD_TOMORROW
+      - key: PORT
+        value: 8000
