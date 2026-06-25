@@ -1,12 +1,14 @@
 """
 VRAI Trade Buddy — Market Data
-Fetches live data from NSE, web sources
-No paid API needed — uses public endpoints
+Fetches live data from NSE public APIs and Groww Trade API (option chain).
 """
 
+import hashlib
+import os
 import requests
-import json
-from datetime import datetime
+import time
+import uuid
+from datetime import datetime, date
 from typing import Optional
 
 # NSE public endpoints (no auth needed)
@@ -16,6 +18,10 @@ NSE_HEADERS = {
     "Accept": "application/json",
     "Referer": "https://www.nseindia.com"
 }
+
+# Groww Trade API
+GROWW_API_BASE = "https://api.groww.in/v1"
+GROWW_TOKEN_URL = f"{GROWW_API_BASE}/token/api/access"
 
 
 class MarketDataFetcher:
@@ -144,10 +150,15 @@ class MarketDataFetcher:
 
     def find_oi_walls(self, symbol: str = "NIFTY", expiry: Optional[str] = None) -> dict:
         """
-        Find major OI walls — CE resistance and PE support
-        Returns top 3 CE walls and top 3 PE walls
+        Find major OI walls — CE resistance and PE support.
+        Tries Groww Trade API first (authenticated, not Akamai-blocked),
+        falls back to NSE direct API.
+        Returns top 3 CE walls and top 3 PE walls.
         """
-        chain = self.get_option_chain(symbol)
+        # Try Groww first — authenticated, bypasses Akamai
+        chain = groww.get_option_chain(underlying=symbol, expiry_date=expiry)
+        if not chain:
+            chain = self.get_option_chain(symbol)
         if not chain or not chain.get("data"):
             return {}
 
@@ -271,5 +282,160 @@ class MarketDataFetcher:
         return {}
 
 
+class GrowwDataFetcher:
+    """
+    Fetches option chain / OI data from Groww Trade API.
+    Handles daily access token refresh (tokens expire at 6 AM IST).
+    Auth flow: SHA256(secret + timestamp) → POST /v1/token/api/access → access_token
+    Then: GET /v1/option-chain/exchange/NSE/underlying/NIFTY?expiry_date=YYYY-MM-DD
+    """
+
+    def __init__(self):
+        self.api_key = os.getenv("GROWW_API_KEY", "")      # long-lived JWT from Groww dashboard
+        self.secret = os.getenv("GROWW_API_SECRET", "")    # API secret for checksum generation
+        self._access_token: Optional[str] = None
+        self._token_date: Optional[str] = None             # date string when token was fetched
+
+    def _groww_headers(self, token: str) -> dict:
+        return {
+            "x-request-id": str(uuid.uuid4()),
+            "Authorization": "Bearer " + token,
+            "Content-Type": "application/json",
+            "x-client-id": "growwapi",
+            "x-client-platform": "growwapi-python-client",
+            "x-client-platform-version": "1.5.0",
+            "x-api-version": "1.0",
+        }
+
+    def _refresh_access_token(self) -> Optional[str]:
+        """Generate a new daily access token using API key + secret checksum."""
+        if not self.api_key or not self.secret:
+            print("[GROWW] GROWW_API_KEY or GROWW_API_SECRET not set")
+            return None
+        try:
+            timestamp = int(time.time())
+            checksum = hashlib.sha256((self.secret + str(timestamp)).encode()).hexdigest()
+            headers = self._groww_headers(self.api_key)
+            payload = {"key_type": "approval", "checksum": checksum, "timestamp": timestamp}
+            r = requests.post(GROWW_TOKEN_URL, headers=headers, json=payload, timeout=15)
+            if r.ok:
+                token = r.json().get("token")
+                if token:
+                    print("[GROWW] Access token refreshed successfully")
+                    return token
+            print(f"[GROWW] Token refresh failed: {r.status_code} {r.text[:200]}")
+        except Exception as e:
+            print(f"[GROWW] Token refresh error: {e}")
+        return None
+
+    def _get_token(self) -> Optional[str]:
+        """Return cached token or refresh if stale (new day)."""
+        today = date.today().isoformat()
+        if self._access_token and self._token_date == today:
+            return self._access_token
+        token = self._refresh_access_token()
+        if token:
+            self._access_token = token
+            self._token_date = today
+        return token
+
+    def get_nearest_expiry(self, exchange: str = "NSE", symbol: str = "NIFTY") -> Optional[str]:
+        """Fetch nearest expiry date for a symbol from Groww."""
+        token = self._get_token()
+        if not token:
+            return None
+        try:
+            url = f"{GROWW_API_BASE}/historical/expiries"
+            params = {"exchange": exchange, "underlying_symbol": symbol}
+            r = requests.get(url, headers=self._groww_headers(token), params=params, timeout=10)
+            if r.ok:
+                data = r.json()
+                payload = data.get("payload", data)
+                expiries = payload if isinstance(payload, list) else payload.get("expiries", [])
+                if expiries:
+                    return expiries[0]  # nearest expiry
+        except Exception as e:
+            print(f"[GROWW] Expiry fetch error: {e}")
+        return None
+
+    def get_option_chain(self, exchange: str = "NSE", underlying: str = "NIFTY",
+                         expiry_date: Optional[str] = None) -> dict:
+        """
+        Fetch full option chain with OI data from Groww Trade API.
+        Returns data in same format expected by find_oi_walls().
+        """
+        token = self._get_token()
+        if not token:
+            return {}
+
+        # Get nearest expiry if not specified
+        if not expiry_date:
+            expiry_date = self.get_nearest_expiry(exchange, underlying)
+        if not expiry_date:
+            print("[GROWW] Could not determine expiry date")
+            return {}
+
+        try:
+            url = f"{GROWW_API_BASE}/option-chain/exchange/{exchange}/underlying/{underlying}"
+            params = {"expiry_date": expiry_date}
+            r = requests.get(url, headers=self._groww_headers(token), params=params, timeout=15)
+            if not r.ok:
+                print(f"[GROWW] Option chain failed: {r.status_code} {r.text[:200]}")
+                return {}
+
+            raw = r.json()
+            payload = raw.get("payload", raw)
+
+            # Parse Groww option chain format into NSE-compatible format
+            spot = float(payload.get("underlying_value") or payload.get("spot") or 0)
+            chain_data = payload.get("data", payload.get("option_chain", []))
+
+            # Build NSE-compatible records list
+            records = []
+            for item in chain_data:
+                strike = float(item.get("strike_price") or item.get("strike") or 0)
+                ce = item.get("CE") or item.get("ce") or {}
+                pe = item.get("PE") or item.get("pe") or {}
+
+                record = {"strikePrice": strike, "expiryDate": expiry_date}
+                if ce:
+                    record["CE"] = {
+                        "openInterest": ce.get("open_interest") or ce.get("openInterest") or 0,
+                        "changeinOpenInterest": ce.get("change_in_oi") or ce.get("changeinOpenInterest") or 0,
+                        "lastPrice": ce.get("last_price") or ce.get("ltp") or 0,
+                        "impliedVolatility": ce.get("implied_volatility") or ce.get("iv") or 0,
+                    }
+                if pe:
+                    record["PE"] = {
+                        "openInterest": pe.get("open_interest") or pe.get("openInterest") or 0,
+                        "changeinOpenInterest": pe.get("change_in_oi") or pe.get("changeinOpenInterest") or 0,
+                        "lastPrice": pe.get("last_price") or pe.get("ltp") or 0,
+                        "impliedVolatility": pe.get("implied_volatility") or pe.get("iv") or 0,
+                    }
+                records.append(record)
+
+            total_ce_oi = sum(r.get("CE", {}).get("openInterest", 0) for r in records)
+            total_pe_oi = sum(r.get("PE", {}).get("openInterest", 0) for r in records)
+            pcr = total_pe_oi / max(total_ce_oi, 1)
+
+            print(f"[GROWW] Option chain OK: {len(records)} strikes, spot={spot}, expiry={expiry_date}")
+            return {
+                "symbol": underlying,
+                "expiry_dates": [expiry_date],
+                "spot_price": spot,
+                "timestamp": datetime.now().strftime("%H:%M:%S"),
+                "pcr": pcr,
+                "total_ce_oi": total_ce_oi,
+                "total_pe_oi": total_pe_oi,
+                "data": records,
+            }
+        except Exception as e:
+            print(f"[GROWW] Option chain parse error: {e}")
+            return {}
+
+
 # Global fetcher instance
 fetcher = MarketDataFetcher()
+
+# Global Groww fetcher (for option chain / OI walls)
+groww = GrowwDataFetcher()

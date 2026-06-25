@@ -19,3 +19,7 @@ services:
         value: 8000
       - key: PYTHONIOENCODING
         value: utf-8
+      - key: GROWW_API_KEY
+        sync: false
+      - key: GROWW_API_SECRET
+        sync: false
