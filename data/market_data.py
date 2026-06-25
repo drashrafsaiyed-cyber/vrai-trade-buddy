@@ -73,7 +73,7 @@ class MarketDataFetcher:
                 "NIFTY MIDCAP 100", "INDIA VIX", "NIFTY IT",
                 "NIFTY PHARMA", "NIFTY AUTO", "NIFTY FMCG",
                 "NIFTY NEXT 50", "NIFTY REALTY", "NIFTY METAL",
-                "NIFTY ENERGY", "NIFTY INFRA"
+                "NIFTY ENERGY", "NIFTY INFRA", "S&P BSE SENSEX"
             }
             results = []
             for item in data.get("data", []):
@@ -81,8 +81,11 @@ class MarketDataFetcher:
                     results.append({
                         "symbol": item.get("indexSymbol"),
                         "last": item.get("last"),
+                        "open": item.get("open"),
                         "pchange": item.get("percentChange"),
                         "change": item.get("variation"),
+                        "high": item.get("high"),
+                        "low": item.get("low"),
                     })
             return results
         except Exception as e:
@@ -125,7 +128,10 @@ class MarketDataFetcher:
             lines.append("\nINDICES:")
             for idx in indices:
                 arrow = "+" if (idx["pchange"] or 0) >= 0 else ""
-                lines.append(f"  {idx['symbol']}: {idx['last']} ({arrow}{idx['pchange']:.2f}%)")
+                lines.append(
+                    f"  {idx['symbol']}: {idx['last']} ({arrow}{idx['pchange']:.2f}%) "
+                    f"O:{idx.get('open','-')} H:{idx.get('high','-')} L:{idx.get('low','-')}"
+                )
 
         # FII/DII
         fii = self.get_fii_dii_data()
