@@ -62,9 +62,27 @@ class AngelOneManager:
         self._instruments = None
         self._instruments_date: Optional[str] = None
 
+    def _notify_telegram(self, message: str):
+        """Send urgent message to Telegram — used for login alerts."""
+        try:
+            token = os.getenv("TELEGRAM_BOT_TOKEN", "")
+            chat_id = os.getenv("TELEGRAM_CHAT_ID", "")
+            if not token or not chat_id:
+                return
+            import requests as _req
+            _req.post(
+                f"https://api.telegram.org/bot{token}/sendMessage",
+                json={"chat_id": chat_id, "text": message},
+                timeout=5
+            )
+        except Exception:
+            pass
+
     def _login(self) -> bool:
         if not all([self.api_key, self.client_id, self.pin, self.totp_secret]):
-            print("[ANGEL] Missing credentials in env vars")
+            msg = "ANGEL ONE LOGIN FAILED — Credentials missing in environment variables. Check Render env vars."
+            print(f"[ANGEL] {msg}")
+            self._notify_telegram(f"Angel One: {msg}")
             return False
         try:
             from SmartApi import SmartConnect
@@ -77,9 +95,21 @@ class AngelOneManager:
                 self._session_date = date.today().isoformat()
                 print(f"[ANGEL] Login OK — JWT starts: {self._jwt[:30]}...")
                 return True
-            print(f"[ANGEL] Login failed: {data.get('message')}")
+            error_msg = data.get("message", "Unknown error")
+            print(f"[ANGEL] Login failed: {error_msg}")
+            self._notify_telegram(
+                f"Angel One Login FAILED!\n"
+                f"Reason: {error_msg}\n"
+                f"Market data aur trades kaam nahi karenge.\n"
+                f"Angel One app mein check karo — TOTP ya PIN change toh nahi hua?"
+            )
         except Exception as e:
             print(f"[ANGEL] Login error: {e}")
+            self._notify_telegram(
+                f"Angel One Login ERROR!\n"
+                f"Error: {str(e)}\n"
+                f"Render logs check karo."
+            )
         return False
 
     def _get_client(self):

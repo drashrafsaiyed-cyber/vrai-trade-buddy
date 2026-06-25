@@ -228,6 +228,50 @@ async def cmd_nifty(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("NIFTY data unavailable.")
 
 
+async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/status — Check Angel One login and system health."""
+    if not _is_authorized(update):
+        return
+    from data.angel_one import angel
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    ist = ZoneInfo("Asia/Kolkata")
+    now = datetime.now(ist).strftime("%d %b %Y %H:%M IST")
+
+    # Check Angel One session
+    client = angel._get_client()
+    if client:
+        session_date = angel._session_date or "unknown"
+        ao_status = f"Angel One: LOGGED IN (session: {session_date})"
+    else:
+        ao_status = "Angel One: NOT LOGGED IN — market data & trades down!"
+
+    msg = (
+        f"VRAI Trade Buddy Status\n"
+        f"Time: {now}\n\n"
+        f"{ao_status}\n"
+        f"Bot: Running\n"
+        f"Scheduler: Active"
+    )
+    await update.message.reply_text(msg)
+
+
+async def cmd_relogin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/relogin — Force Angel One re-login with fresh TOTP."""
+    if not _is_authorized(update):
+        return
+    await update.message.reply_text("Angel One re-login try kar raha hoon...")
+    from data.angel_one import angel
+    angel._session_date = None  # Force fresh login
+    angel._obj = None
+    client = angel._get_client()
+    if client:
+        await update.message.reply_text(f"Re-login successful! Session: {angel._session_date}")
+    else:
+        await update.message.reply_text("Re-login FAILED. Render logs check karo ya credentials verify karo.")
+
+
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """/help — Show all commands."""
     if not _is_authorized(update):
@@ -239,7 +283,9 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/portfolio — Open F&O positions\n"
         "/funds — Available margin\n"
         "/buy NIFTY 24200 CE 26JUN2026 1 — Place buy order\n"
-        "/sell NIFTY 24200 CE 26JUN2026 1 — Place sell order\n\n"
+        "/sell NIFTY 24200 CE 26JUN2026 1 — Place sell order\n"
+        "/status — Check Angel One login & system health\n"
+        "/relogin — Force Angel One re-login\n\n"
         "Ya kuch bhi likho — AI se baat karo!"
     )
     await update.message.reply_text(msg)
@@ -255,6 +301,8 @@ def build_application() -> Application:
     app.add_handler(CommandHandler("buy", cmd_buy))
     app.add_handler(CommandHandler("sell", cmd_sell))
     app.add_handler(CommandHandler("nifty", cmd_nifty))
+    app.add_handler(CommandHandler("status", cmd_status))
+    app.add_handler(CommandHandler("relogin", cmd_relogin))
     app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(CommandHandler("start", cmd_help))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
