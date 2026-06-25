@@ -187,20 +187,80 @@ async def root():
 def _extract_stock_mentions(text: str) -> list:
     """Extract NSE stock symbols mentioned in user message for live price lookup."""
     import re
-    # Common NSE large-cap symbols
+    # All major NSE stocks — NIFTY 50 + NEXT 50 + MIDCAP 150 + popular F&O + new-age
     known = {
-        "RELIANCE", "TCS", "INFY", "HDFCBANK", "ICICIBANK", "SBIN", "AXISBANK",
-        "KOTAKBANK", "HINDUNILVR", "ITC", "BHARTIARTL", "WIPRO", "HCLTECH",
-        "ASIANPAINT", "MARUTI", "BAJFINANCE", "BAJAJFINSV", "TITAN", "NESTLEIND",
-        "ULTRACEMCO", "SUNPHARMA", "DRREDDY", "CIPLA", "DIVISLAB", "APOLLOHOSP",
-        "TATAMOTORS", "TATASTEEL", "HINDALCO", "JSWSTEEL", "COALINDIA",
-        "ONGC", "NTPC", "POWERGRID", "ADANIPORTS", "ADANIENT", "TECHM",
-        "LTIM", "LT", "M&M", "EICHERMOT", "BAJAJ-AUTO", "HEROMOTOCO",
-        "INDUSINDBK", "GRASIM", "BPCL", "IOC", "PIDILITIND", "DABUR",
-        "BRITANNIA", "TATACONSUM", "HDFCLIFE", "SBILIFE", "ICICIPRULI",
+        # NIFTY 50
+        "ADANIPORTS","ADANIENT","APOLLOHOSP","ASIANPAINT","AXISBANK","BAJAJ-AUTO",
+        "BAJFINANCE","BAJAJFINSV","BPCL","BHARTIARTL","BRITANNIA","CIPLA","COALINDIA",
+        "DIVISLAB","DRREDDY","EICHERMOT","GRASIM","HCLTECH","HDFCBANK","HDFCLIFE",
+        "HEROMOTOCO","HINDALCO","HINDUNILVR","ICICIBANK","INDUSINDBK","INFY","ITC",
+        "JSWSTEEL","KOTAKBANK","LT","LTIM","M&M","MARUTI","NESTLEIND","NTPC","ONGC",
+        "POWERGRID","RELIANCE","SBILIFE","SBIN","SUNPHARMA","TATACONSUM","TATAMOTORS",
+        "TATASTEEL","TCS","TECHM","TITAN","ULTRACEMCO","WIPRO","ICICIPRULI",
+        # NIFTY NEXT 50
+        "ABB","ADANIGREEN","ADANITRANS","AMBUJACEM","ATGL","BAJAJHLDNG","BANKBARODA",
+        "BEL","BERGEPAINT","BOSCHLTD","CANBK","CHOLAFIN","COLPAL","CUMMINSIND",
+        "DLF","GAIL","GODREJCP","GODREJPROP","HAVELLS","INDIGO","INDUSTOWER",
+        "IRCTC","JINDALSTEL","JUBLFOOD","LICI","LODHA","LUPIN","MARICO","NAUKRI",
+        "OFSS","PAGEIND","PERSISTENT","PIIND","PNB","POLYCAB","RECLTD","SHRIRAMFIN",
+        "SIEMENS","SRF","TATAPOWER","TORNTPHARM","TRENT","UNIONBANK","UPL","VEDL",
+        "ZYDUSLIFE","MCDOWELL-N","MUTHOOTFIN",
+        # NIFTY MIDCAP 150
+        "AUROPHARMA","BALKRISIND","BATAINDIA","BHEL","BIOCON","BLUEDART","CESC",
+        "CROMPTON","DALBHARAT","DEEPAKNTR","DIXON","ESCORTS","EXIDEIND","FEDERALBNK",
+        "GLENMARK","GMRINFRA","GNFC","GRANULES","GUJGASLTD","HFCL","IDFCFIRSTB",
+        "IEX","IIFL","INDHOTEL","IOB","IPCALAB","JKCEMENT","JSWENERGY","KAJARIACER",
+        "KANSAINER","KEI","KPITTECH","LAURUSLABS","LICHSGFIN","LTTS","MANAPPURAM",
+        "MAXHEALTH","METROPOLIS","MGL","MOTHERSON","MPHASIS","MRPL","NATCOPHARM",
+        "NBCC","NCC","NMDC","OBEROIRLTY","PETRONET","PFC","PHOENIXLTD","PIDILITIND",
+        "PRESTIGE","RAMCOCEM","RBLBANK","SAIL","SJVN","SOLARINDS","SONACOMS",
+        "SUNDRMFAST","SUPREMEIND","SYNGENE","TATACHEM","TATACOMM","TATAELXSI",
+        "THERMAX","TIINDIA","TORNTPOWER","TRIDENT","TVSMOTORS","UBL","VOLTAS",
+        "ZEEL","ZOMATO","NYKAA","DELHIVERY","POLICYBZR","PAYTM","SWIGGY",
+        # PSU & Banks
+        "IOC","HINDPETRO","GPCL","NLCINDIA","RVNL","IRFC","HUDCO","IREDA",
+        "CENTRALBANK","INDIANB","MAHABANK","UCOBANK","BANDHANBNK","AUBANK",
+        "EQUITASBNK","UJJIVANSFB","FINPIPE","JAIBALAJI",
+        # Popular F&O stocks
+        "ADANIPOWER","APLAPOLLO","ASTRAL","CHAMBLFERT","CLEAN","COFORGE",
+        "CONCOR","CYIENT","DATAPATTNS","FIVESTAR","GLAXO","GRINDWELL",
+        "HAPPSTMNDS","HINDCOPPER","INOXWIND","IRCON","ISEC","JBCHEPHARM",
+        "KFINTECH","KIMS","LALPATHLAB","LATENTVIEW","MAPMYINDIA","MEDANTA",
+        "NUVAMA","OLECTRA","PGHH","PNBHOUSING","RADICO","RAINBOW","ROUTE",
+        "SAPPHIRE","SCHAEFFLER","SENCO","SIGNATURE","SOBHA","SUNTV","TANLA",
+        "TASTYBITE","TIPSINDLTD","TRITURBINE","UNOMINDA","UTIAMC","VAIBHAVGBL",
+        "VGUARD","VBL","WELSPUNLIV","WHIRLPOOL","ZENSARTECH","AARTIIND",
+        # Smallcap popular
+        "FACT","GHCL","GODREJIND","HEMIPROP","JKLAKSHMI","KSCL","KSEB",
+        "MOLDTKPAC","NEULANDLAB","NIACL","NIITLTD","ORIENTELEC","PCBL",
+        "PREMIER","RPOWER","SAREGAMA","SHYAMMETL","SUNDARAM","TRIL",
+        # Commodities & Chemicals
+        "ATUL","BASF","BAYER","DEEPAKFERT","FINEORG","GALAXYSURF","NAVINFLUOR",
+        "NOCIL","PIDILITIND","RALLIS","SUDARSCHEM","TATACHEM","VINATIORG",
+        # Insurance & AMC
+        "ABSLAMC","ANGELONE","BFUTILITIE","CAMS","HDFCAMC","ICICIGI","MFSL",
+        "NIACL","SBICARD","STARHEALTH",
+        # Dabur, FMCG
+        "DABUR","EMAMILTD","GODREJCP","JYOTHYLAB","MARICO","PGHH","RADICO",
+        "TATACONSUM","UBL","VSTIND",
     }
-    words = set(re.findall(r'\b[A-Z][A-Z0-9&\-]{2,14}\b', text.upper()))
-    return list(words & known)
+    words = set(re.findall(r'\b[A-Z][A-Z0-9&\-]{1,14}\b', text.upper()))
+    matched = list(words & known)
+
+    # Smart fallback: try any remaining ALL-CAPS word (3-10 chars) as NSE ticker
+    remainder = words - known
+    for word in remainder:
+        if 3 <= len(word) <= 10 and word.isalpha():
+            try:
+                import yfinance as yf
+                t = yf.Ticker(f"{word}.NS")
+                p = t.fast_info.last_price
+                if p and p > 0:
+                    matched.append(word)
+            except Exception:
+                pass
+
+    return matched
 
 
 @app.post("/chat")

@@ -63,30 +63,22 @@ class MarketDataFetcher:
             print(f"[ERROR] Index quote failed: {e}")
 
     def get_all_indices(self) -> list:
-        """Get all major Indian indices in one call."""
+        """Get ALL Indian indices from NSE in one call — no filter."""
         try:
             url = f"{NSE_BASE}/api/allIndices"
             r = self.session.get(url, timeout=10)
             data = r.json()
-            wanted = {
-                "NIFTY 50", "NIFTY BANK", "NIFTY FIN SERVICE",
-                "NIFTY MIDCAP 100", "INDIA VIX", "NIFTY IT",
-                "NIFTY PHARMA", "NIFTY AUTO", "NIFTY FMCG",
-                "NIFTY NEXT 50", "NIFTY REALTY", "NIFTY METAL",
-                "NIFTY ENERGY", "NIFTY INFRA", "S&P BSE SENSEX"
-            }
             results = []
             for item in data.get("data", []):
-                if item.get("indexSymbol") in wanted:
-                    results.append({
-                        "symbol": item.get("indexSymbol"),
-                        "last": item.get("last"),
-                        "open": item.get("open"),
-                        "pchange": item.get("percentChange"),
-                        "change": item.get("variation"),
-                        "high": item.get("high"),
-                        "low": item.get("low"),
-                    })
+                results.append({
+                    "symbol": item.get("indexSymbol"),
+                    "last": item.get("last"),
+                    "open": item.get("open"),
+                    "pchange": item.get("percentChange"),
+                    "change": item.get("variation"),
+                    "high": item.get("high"),
+                    "low": item.get("low"),
+                })
             return results
         except Exception as e:
             print(f"[ERROR] All indices failed: {e}")
@@ -122,11 +114,27 @@ class MarketDataFetcher:
         """
         lines = [f"[LIVE MARKET DATA — {datetime.now(_IST).strftime('%d %b %Y %H:%M')} IST]"]
 
-        # All indices
+        # All indices — grouped
         indices = self.get_all_indices()
         if indices:
+            # Priority order for display
+            priority = [
+                "NIFTY 50", "S&P BSE SENSEX", "NIFTY BANK", "NIFTY FIN SERVICE",
+                "NIFTY MIDCAP 100", "NIFTY NEXT 50", "INDIA VIX",
+                "NIFTY IT", "NIFTY PHARMA", "NIFTY AUTO", "NIFTY FMCG",
+                "NIFTY METAL", "NIFTY REALTY", "NIFTY ENERGY", "NIFTY INFRA",
+                "NIFTY SMALLCAP 100", "NIFTY MIDCAP 50", "NIFTY 100",
+                "NIFTY 200", "NIFTY 500", "NIFTY PSU BANK", "NIFTY PRIVATE BANK",
+                "NIFTY HEALTHCARE", "NIFTY CONSUMPTION", "NIFTY COMMODITIES",
+                "NIFTY MEDIA", "NIFTY OIL & GAS", "NIFTY INDIA DEFENCE",
+            ]
+            idx_map = {i["symbol"]: i for i in indices if i["symbol"]}
+            ordered = [idx_map[s] for s in priority if s in idx_map]
+            rest = [i for i in indices if i["symbol"] not in priority and i["symbol"]]
+            ordered += rest
+
             lines.append("\nINDICES:")
-            for idx in indices:
+            for idx in ordered:
                 arrow = "+" if (idx["pchange"] or 0) >= 0 else ""
                 lines.append(
                     f"  {idx['symbol']}: {idx['last']} ({arrow}{idx['pchange']:.2f}%) "
