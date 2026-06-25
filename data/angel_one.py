@@ -15,6 +15,39 @@ load_dotenv()
 
 INSTRUMENTS_URL = "https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json"
 
+# Angel One token IDs for major NSE indices
+NSE_INDEX_TOKENS = {
+    "NIFTY 50":           "99926000",
+    "NIFTY BANK":         "99926009",
+    "NIFTY FIN SERVICE":  "99926037",
+    "NIFTY MIDCAP 100":   "99926011",
+    "INDIA VIX":          "99926017",
+    "NIFTY IT":           "99926006",
+    "NIFTY PHARMA":       "99926013",
+    "NIFTY AUTO":         "99926003",
+    "NIFTY FMCG":         "99926004",
+    "NIFTY METAL":        "99926010",
+    "NIFTY REALTY":       "99926014",
+    "NIFTY ENERGY":       "99926015",
+    "NIFTY 100":          "99926001",
+    "NIFTY 200":          "99926002",
+    "NIFTY 500":          "99926016",
+    "NIFTY SMALLCAP 100": "99926018",
+    "NIFTY NEXT 50":      "99926019",
+    "NIFTY PSU BANK":     "99926026",
+    "NIFTY PRIVATE BANK": "99926024",
+    "NIFTY MEDIA":        "99926023",
+    "NIFTY OIL & GAS":    "99926036",
+    "NIFTY COMMODITIES":  "99926025",
+    "NIFTY MIDCAP 50":    "99926028",
+    "NIFTY INFRA":        "99926007",
+    "NIFTY CONSUMPTION":  "99926030",
+}
+
+BSE_INDEX_TOKENS = {
+    "S&P BSE SENSEX": "1",
+}
+
 
 class AngelOneManager:
     def __init__(self):
@@ -184,6 +217,106 @@ class AngelOneManager:
             "pe_walls": [{"strike": s, "oi": v["oi"], "ltp": v["ltp"]} for s, v in top_pe],
             "atm_strike": round(spot / 50) * 50,
         }
+
+    def get_all_index_quotes(self) -> list:
+        """
+        Fetch OHLC for all major NSE indices + SENSEX via Angel One.
+        Returns list of dicts compatible with MarketDataFetcher.get_all_indices().
+        """
+        client = self._get_client()
+        if not client:
+            return []
+        try:
+            exchange_tokens = {
+                "NSE": list(NSE_INDEX_TOKENS.values()),
+                "BSE": list(BSE_INDEX_TOKENS.values()),
+            }
+            result = client.getMarketData("OHLC", exchange_tokens)
+            if not result or not result.get("status"):
+                print(f"[ANGEL] Index quotes failed: {result}")
+                return []
+
+            token_to_name = {v: k for k, v in NSE_INDEX_TOKENS.items()}
+            token_to_name.update({v: k for k, v in BSE_INDEX_TOKENS.items()})
+
+            quotes = []
+            for item in result.get("data", {}).get("fetched", []):
+                tok = str(item.get("symbolToken", ""))
+                name = token_to_name.get(tok, tok)
+                ltp = float(item.get("ltp", 0) or 0)
+                prev = float(item.get("close", 0) or ltp)
+                chg = round(ltp - prev, 2)
+                pchg = round(chg / prev * 100, 2) if prev else 0
+                quotes.append({
+                    "symbol": name,
+                    "last":   ltp,
+                    "open":   float(item.get("open", 0) or 0),
+                    "high":   float(item.get("high", 0) or 0),
+                    "low":    float(item.get("low",  0) or 0),
+                    "change": chg,
+                    "pchange": pchg,
+                })
+            print(f"[ANGEL] Index quotes OK — {len(quotes)} indices")
+            return quotes
+        except Exception as e:
+            print(f"[ANGEL] Index quotes error: {e}")
+            return []
+
+    def get_stock_quotes(self, symbols: list) -> list:
+        """
+        Fetch OHLC for a list of NSE stock symbols via Angel One instruments master.
+        Returns list of dicts compatible with MarketDataFetcher.get_stock_quote().
+        """
+        if not symbols:
+            return []
+        client = self._get_client()
+        if not client:
+            return []
+        instruments = self._load_instruments()
+        if not instruments:
+            return []
+
+        tokens = []
+        tok_sym_map = {}
+        for sym in symbols:
+            match = next(
+                (x for x in instruments
+                 if x.get("symbol") == sym
+                 and x.get("exch_seg") == "NSE"
+                 and x.get("instrumenttype") in ("", "EQ")),
+                None
+            )
+            if match:
+                tok = match["token"]
+                tokens.append(tok)
+                tok_sym_map[tok] = sym
+
+        if not tokens:
+            return []
+        try:
+            result = client.getMarketData("OHLC", {"NSE": tokens})
+            if not result or not result.get("status"):
+                return []
+            quotes = []
+            for item in result.get("data", {}).get("fetched", []):
+                tok = str(item.get("symbolToken", ""))
+                sym = tok_sym_map.get(tok, tok)
+                ltp = float(item.get("ltp", 0) or 0)
+                prev = float(item.get("close", 0) or ltp)
+                chg_pct = round((ltp - prev) / prev * 100, 2) if prev else 0
+                quotes.append({
+                    "symbol":     sym,
+                    "price":      ltp,
+                    "prev_close": prev,
+                    "change_pct": chg_pct,
+                    "high":       float(item.get("high", 0) or 0),
+                    "low":        float(item.get("low",  0) or 0),
+                    "open":       float(item.get("open", 0) or 0),
+                })
+            return quotes
+        except Exception as e:
+            print(f"[ANGEL] Stock quotes error: {e}")
+            return []
 
     def place_order(self, symbol: str, option_type: str, strike: float,
                     expiry_str: str, action: str, quantity: int = 1) -> dict:

@@ -63,7 +63,17 @@ class MarketDataFetcher:
             print(f"[ERROR] Index quote failed: {e}")
 
     def get_all_indices(self) -> list:
-        """Get ALL Indian indices from NSE in one call — no filter."""
+        """
+        Fetch all major indices — Angel One primary (authenticated, real-time),
+        NSE public API as fallback.
+        """
+        from data.angel_one import angel
+        quotes = angel.get_all_index_quotes()
+        if quotes:
+            return quotes
+
+        # Fallback: NSE public API
+        print("[WARN] Angel One index fetch failed, falling back to NSE API")
         try:
             url = f"{NSE_BASE}/api/allIndices"
             r = self.session.get(url, timeout=10)
@@ -71,21 +81,27 @@ class MarketDataFetcher:
             results = []
             for item in data.get("data", []):
                 results.append({
-                    "symbol": item.get("indexSymbol"),
-                    "last": item.get("last"),
-                    "open": item.get("open"),
+                    "symbol":  item.get("indexSymbol"),
+                    "last":    item.get("last"),
+                    "open":    item.get("open"),
                     "pchange": item.get("percentChange"),
-                    "change": item.get("variation"),
-                    "high": item.get("high"),
-                    "low": item.get("low"),
+                    "change":  item.get("variation"),
+                    "high":    item.get("high"),
+                    "low":     item.get("low"),
                 })
             return results
         except Exception as e:
-            print(f"[ERROR] All indices failed: {e}")
+            print(f"[ERROR] NSE fallback indices failed: {e}")
             return []
 
     def get_stock_quote(self, ticker: str) -> dict:
-        """Get live stock price for any NSE stock via Yahoo Finance history."""
+        """Get live stock price — Angel One primary, Yahoo Finance fallback."""
+        from data.angel_one import angel
+        quotes = angel.get_stock_quotes([ticker])
+        if quotes:
+            return quotes[0]
+
+        # Fallback: Yahoo Finance
         try:
             import yfinance as yf
             t = yf.Ticker(f"{ticker}.NS")
@@ -108,33 +124,8 @@ class MarketDataFetcher:
             return {}
 
     def get_sensex(self) -> dict:
-        """Fetch SENSEX (BSE) via Yahoo Finance history — more accurate than fast_info."""
-        try:
-            import yfinance as yf
-            t = yf.Ticker("^BSESN")
-            hist = t.history(period="2d", interval="1d")
-            if hist.empty:
-                return {}
-            today = hist.iloc[-1]
-            prev_close = hist.iloc[-2]["Close"] if len(hist) >= 2 else today["Open"]
-            price = round(float(today["Close"]), 2)
-            open_p = round(float(today["Open"]), 2)
-            high = round(float(today["High"]), 2)
-            low = round(float(today["Low"]), 2)
-            chg = round(price - prev_close, 2)
-            pchg = round(chg / prev_close * 100, 2) if prev_close else 0
-            return {
-                "symbol": "S&P BSE SENSEX",
-                "last": price,
-                "open": open_p,
-                "high": high,
-                "low": low,
-                "pchange": pchg,
-                "change": chg,
-            }
-        except Exception as e:
-            print(f"[ERROR] SENSEX fetch failed: {e}")
-            return {}
+        """SENSEX is now fetched via Angel One (BSE token 1) inside get_all_indices."""
+        return {}  # Handled by Angel One index quotes
 
     def build_market_context(self, extra_stocks: list = None) -> str:
         """
@@ -145,11 +136,6 @@ class MarketDataFetcher:
 
         # All indices — grouped
         indices = self.get_all_indices()
-        # Inject SENSEX from Yahoo Finance (BSE index, not on NSE API)
-        sensex = self.get_sensex()
-        if sensex:
-            indices = [sensex] + [i for i in indices if i.get("symbol") != "S&P BSE SENSEX"]
-
         if indices:
             # Priority order for display
             priority = [
