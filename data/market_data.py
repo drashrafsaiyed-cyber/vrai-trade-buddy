@@ -178,8 +178,11 @@ class MarketDataFetcher:
         # FII/DII
         fii = self.get_fii_dii_data()
         if fii and fii.get("date"):
-            lines.append(f"\nFII/DII ({fii['date']}):")
-            lines.append(f"  FII Net: {fii['fii_net']:+,.0f} Cr | DII Net: {fii['dii_net']:+,.0f} Cr")
+            note = fii.get("note", "NSE")
+            lines.append(f"\nFII/DII ({fii['date']}) [{note}]:")
+            lines.append(f"  FII: Buy {fii['fii_buy']:,.0f} | Sell {fii['fii_sell']:,.0f} | Net {fii['fii_net']:+,.0f} Cr")
+            lines.append(f"  DII: Buy {fii['dii_buy']:,.0f} | Sell {fii['dii_sell']:,.0f} | Net {fii['dii_net']:+,.0f} Cr")
+            lines.append(f"  NOTE: Ye Cash+F&O combined provisional data hai. Cash-only figures alag ho sakte hain.")
 
         # Extra stocks if requested
         if extra_stocks:
@@ -395,19 +398,29 @@ class MarketDataFetcher:
 
     def _parse_fii_dii_list(self, data: list) -> dict:
         """Parse a list of FII/DII records into a clean dict."""
+        # Sort by date descending to get most recent first
+        try:
+            data = sorted(data, key=lambda x: x.get("date", ""), reverse=True)
+        except Exception:
+            pass
         fii = next((x for x in data if "FII" in x.get("category", "").upper()), {})
         dii = next((x for x in data if x.get("category", "").upper().startswith("DII")), {})
         if not fii and not dii:
             return {}
         rec_date = (fii or dii).get("date", "")
+        fii_buy  = float(fii.get("buyValue",  fii.get("buy_value",  0)) or 0)
+        fii_sell = float(fii.get("sellValue", fii.get("sell_value", 0)) or 0)
+        dii_buy  = float(dii.get("buyValue",  dii.get("buy_value",  0)) or 0)
+        dii_sell = float(dii.get("sellValue", dii.get("sell_value", 0)) or 0)
         return {
             "date": rec_date,
-            "fii_buy":  float(fii.get("buyValue",  fii.get("buy_value",  0)) or 0),
-            "fii_sell": float(fii.get("sellValue", fii.get("sell_value", 0)) or 0),
-            "fii_net":  float(fii.get("netValue",  fii.get("net_value",  0)) or 0),
-            "dii_buy":  float(dii.get("buyValue",  dii.get("buy_value",  0)) or 0),
-            "dii_sell": float(dii.get("sellValue", dii.get("sell_value", 0)) or 0),
-            "dii_net":  float(dii.get("netValue",  dii.get("net_value",  0)) or 0),
+            "fii_buy":  fii_buy,
+            "fii_sell": fii_sell,
+            "fii_net":  round(fii_buy - fii_sell, 2),   # Compute ourselves — don't trust netValue
+            "dii_buy":  dii_buy,
+            "dii_sell": dii_sell,
+            "dii_net":  round(dii_buy - dii_sell, 2),   # Compute ourselves
+            "note": "NSE All Segments (Cash+F&O combined)",
         }
 
     def get_fii_dii_data(self) -> dict:
