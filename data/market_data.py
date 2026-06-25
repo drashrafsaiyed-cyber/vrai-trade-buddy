@@ -56,21 +56,21 @@ class MarketDataFetcher:
 
     def get_option_chain(self, symbol: str = "NIFTY") -> dict:
         """
-        Get full option chain with OI data
-        Returns CE/PE OI for all strikes
+        Get full option chain with OI data.
+        Tries NSE direct API first, falls back to curl-based fetch (bypasses Akamai).
         """
+        if symbol in ["NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "SENSEX"]:
+            url = f"{NSE_BASE}/api/option-chain-indices?symbol={symbol}"
+        else:
+            url = f"{NSE_BASE}/api/option-chain-equities?symbol={symbol}"
+
+        data = self._fetch_nse_json(url)
+        if not data:
+            return {}
+
         try:
-            if symbol in ["NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "SENSEX"]:
-                url = f"{NSE_BASE}/api/option-chain-indices?symbol={symbol}"
-            else:
-                url = f"{NSE_BASE}/api/option-chain-equities?symbol={symbol}"
-
-            r = self.session.get(url, timeout=15)
-            data = r.json()
-
             records = data.get("records", {})
             filtered = data.get("filtered", {})
-
             return {
                 "symbol": symbol,
                 "expiry_dates": records.get("expiryDates", []),
@@ -82,8 +82,65 @@ class MarketDataFetcher:
                 "data": records.get("data", [])
             }
         except Exception as e:
-            print(f"[ERROR] Option chain failed for {symbol}: {e}")
+            print(f"[ERROR] Option chain parse failed for {symbol}: {e}")
             return {}
+
+    def _fetch_nse_json(self, url: str) -> dict:
+        """
+        Fetch NSE JSON with Akamai bypass.
+        Strategy: warm session with homepage + option-chain page, then call API.
+        Falls back to curl subprocess if requests is blocked.
+        """
+        import subprocess, json as _json
+
+        # Strategy 1: requests session (works on some IPs)
+        try:
+            s = requests.Session()
+            s.headers.update({
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Accept-Language": "en-US,en;q=0.9",
+            })
+            s.get(NSE_BASE, timeout=10)
+            s.get(f"{NSE_BASE}/option-chain", timeout=10)
+            r = s.get(url, timeout=15, headers={"Accept": "application/json"})
+            if r.status_code == 200 and r.text.strip().startswith("{"):
+                return r.json()
+        except Exception:
+            pass
+
+        # Strategy 2: curl subprocess with cookie jar (handles Akamai JS challenge better)
+        try:
+            import tempfile, os
+            cookie_file = os.path.join(tempfile.gettempdir(), "nse_cookies.txt")
+            curl_ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+            subprocess.run(
+                ["curl", "-s", "-c", cookie_file, "-b", cookie_file,
+                 "-A", curl_ua, "-L", "--max-time", "10",
+                 NSE_BASE],
+                capture_output=True, timeout=12
+            )
+            subprocess.run(
+                ["curl", "-s", "-c", cookie_file, "-b", cookie_file,
+                 "-A", curl_ua, "-L", "--max-time", "10",
+                 f"{NSE_BASE}/option-chain"],
+                capture_output=True, timeout=12
+            )
+            result = subprocess.run(
+                ["curl", "-s", "-c", cookie_file, "-b", cookie_file,
+                 "-A", curl_ua,
+                 "-H", "Accept: application/json",
+                 "-H", f"Referer: {NSE_BASE}/option-chain",
+                 "--max-time", "15", url],
+                capture_output=True, timeout=18
+            )
+            text = result.stdout.decode("utf-8", errors="replace").strip()
+            if text.startswith("{"):
+                return _json.loads(text)
+        except Exception as e:
+            print(f"[ERROR] Option chain failed for curl fallback: {e}")
+
+        return {}
 
     def find_oi_walls(self, symbol: str = "NIFTY", expiry: Optional[str] = None) -> dict:
         """
