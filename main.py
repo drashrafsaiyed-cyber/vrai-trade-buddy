@@ -10,6 +10,9 @@ Deploy on Render.com
 import os
 import sys
 import asyncio
+from zoneinfo import ZoneInfo
+
+_IST = ZoneInfo("Asia/Kolkata")
 
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -214,7 +217,7 @@ async def chat(msg: ChatMessage):
         enriched = context + "\n\nUser: " + msg.message
 
         response = brain.chat(enriched)
-        return {"response": response, "time": datetime.now().strftime("%H:%M:%S")}
+        return {"response": response, "time": datetime.now(_IST).strftime("%H:%M:%S")}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -262,7 +265,7 @@ async def health():
     """Health check for Render"""
     return {
         "status": "alive",
-        "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S IST"),
+        "time": datetime.now(_IST).strftime("%Y-%m-%d %H:%M:%S IST"),
         "scheduler": scheduler.running
     }
 

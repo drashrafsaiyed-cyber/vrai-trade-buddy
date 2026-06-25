@@ -9,7 +9,10 @@ import requests
 import time
 import uuid
 from datetime import datetime, date
+from zoneinfo import ZoneInfo
 from typing import Optional
+
+_IST = ZoneInfo("Asia/Kolkata")
 
 # NSE public endpoints (no auth needed)
 NSE_BASE = "https://www.nseindia.com"
@@ -54,7 +57,7 @@ class MarketDataFetcher:
                         "low": item.get("low"),
                         "open": item.get("open"),
                         "prev_close": item.get("previousClose"),
-                        "timestamp": datetime.now().strftime("%H:%M:%S")
+                        "timestamp": datetime.now(_IST).strftime("%H:%M:%S")
                     }
         except Exception as e:
             print(f"[ERROR] Index quote failed: {e}")
@@ -114,7 +117,7 @@ class MarketDataFetcher:
         Build a rich [LIVE DATA] context string for AI injection.
         Includes all indices + FII/DII + optional specific stocks.
         """
-        lines = [f"[LIVE MARKET DATA — {datetime.now().strftime('%d %b %Y %H:%M')} IST]"]
+        lines = [f"[LIVE MARKET DATA — {datetime.now(_IST).strftime('%d %b %Y %H:%M')} IST]"]
 
         # All indices
         indices = self.get_all_indices()
@@ -318,7 +321,7 @@ class MarketDataFetcher:
             data = r.json()
             return {
                 "oi_gainers": data.get("data", [])[:10],
-                "timestamp": datetime.now().strftime("%H:%M:%S")
+                "timestamp": datetime.now(_IST).strftime("%H:%M:%S")
             }
         except Exception as e:
             print(f"[ERROR] FnO movers failed: {e}")
@@ -507,7 +510,7 @@ class GrowwDataFetcher:
                 "symbol": underlying,
                 "expiry_dates": [expiry_date],
                 "spot_price": spot,
-                "timestamp": datetime.now().strftime("%H:%M:%S"),
+                "timestamp": datetime.now(_IST).strftime("%H:%M:%S"),
                 "pcr": pcr,
                 "total_ce_oi": total_ce_oi,
                 "total_pe_oi": total_pe_oi,
