@@ -393,27 +393,53 @@ class MarketDataFetcher:
             print(f"[ERROR] Gift Nifty failed: {e}")
         return {}
 
+    def _parse_fii_dii_list(self, data: list) -> dict:
+        """Parse a list of FII/DII records into a clean dict."""
+        fii = next((x for x in data if "FII" in x.get("category", "").upper()), {})
+        dii = next((x for x in data if x.get("category", "").upper().startswith("DII")), {})
+        if not fii and not dii:
+            return {}
+        rec_date = (fii or dii).get("date", "")
+        return {
+            "date": rec_date,
+            "fii_buy":  float(fii.get("buyValue",  fii.get("buy_value",  0)) or 0),
+            "fii_sell": float(fii.get("sellValue", fii.get("sell_value", 0)) or 0),
+            "fii_net":  float(fii.get("netValue",  fii.get("net_value",  0)) or 0),
+            "dii_buy":  float(dii.get("buyValue",  dii.get("buy_value",  0)) or 0),
+            "dii_sell": float(dii.get("sellValue", dii.get("sell_value", 0)) or 0),
+            "dii_net":  float(dii.get("netValue",  dii.get("net_value",  0)) or 0),
+        }
+
     def get_fii_dii_data(self) -> dict:
-        """Get latest FII/DII cash flow data"""
-        try:
-            url = f"{NSE_BASE}/api/fiidiiTradeReact"
-            r = self.session.get(url, timeout=10)
-            data = r.json()
-            if data and len(data) > 0:
-                fii = next((x for x in data if "FII" in x.get("category", "")), {})
-                dii = next((x for x in data if "DII" in x.get("category", "")), {})
-                date = (fii or dii).get("date", "")
-                return {
-                    "date": date,
-                    "fii_buy": float(fii.get("buyValue", 0)),
-                    "fii_sell": float(fii.get("sellValue", 0)),
-                    "fii_net": float(fii.get("netValue", 0)),
-                    "dii_buy": float(dii.get("buyValue", 0)),
-                    "dii_sell": float(dii.get("sellValue", 0)),
-                    "dii_net": float(dii.get("netValue", 0))
-                }
-        except Exception as e:
-            print(f"[ERROR] FII/DII data failed: {e}")
+        """Get latest FII/DII cash flow — tries multiple NSE endpoints."""
+        endpoints = [
+            f"{NSE_BASE}/api/fiidiiTradeReact",
+            f"{NSE_BASE}/api/fiiDiiData",
+            f"{NSE_BASE}/api/fii-dii-data",
+        ]
+        today_str = datetime.now(_IST).strftime("%d-%b-%Y")  # e.g. 25-Jun-2026
+
+        for url in endpoints:
+            try:
+                r = self.session.get(url, timeout=10)
+                if not r.ok:
+                    continue
+                raw = r.json()
+                # Handle both list and dict responses
+                data = raw if isinstance(raw, list) else raw.get("data", raw.get("fiiDii", []))
+                if not isinstance(data, list) or not data:
+                    continue
+                result = self._parse_fii_dii_list(data)
+                if not result:
+                    continue
+                # Log if date doesn't match today (stale data warning)
+                if result["date"] and today_str.lower() not in result["date"].lower():
+                    print(f"[WARN] FII/DII date mismatch: got {result['date']}, today {today_str}")
+                print(f"[INFO] FII/DII from {url}: FII={result['fii_net']:+.0f} DII={result['dii_net']:+.0f} ({result['date']})")
+                return result
+            except Exception as e:
+                print(f"[WARN] FII/DII endpoint {url} failed: {e}")
+
         return {}
 
 
