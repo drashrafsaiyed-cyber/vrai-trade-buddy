@@ -17,3 +17,5 @@ services:
         sync: false
       - key: PORT
         value: 8000
+      - key: PYTHONIOENCODING
+        value: utf-8
