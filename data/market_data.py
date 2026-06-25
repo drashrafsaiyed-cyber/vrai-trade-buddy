@@ -85,44 +85,52 @@ class MarketDataFetcher:
             return []
 
     def get_stock_quote(self, ticker: str) -> dict:
-        """
-        Get live stock price for any NSE stock via Yahoo Finance.
-        ticker: NSE symbol like RELIANCE, HDFC, TCS etc.
-        """
+        """Get live stock price for any NSE stock via Yahoo Finance history."""
         try:
             import yfinance as yf
             t = yf.Ticker(f"{ticker}.NS")
-            info = t.fast_info
-            price = info.last_price or 0
-            prev = info.previous_close or price
+            hist = t.history(period="2d", interval="1d")
+            if hist.empty:
+                return {}
+            today = hist.iloc[-1]
+            prev_close = float(hist.iloc[-2]["Close"]) if len(hist) >= 2 else float(today["Open"])
+            price = round(float(today["Close"]), 2)
             return {
                 "symbol": ticker,
-                "price": round(price, 2),
-                "prev_close": round(prev, 2),
-                "change_pct": round((price - prev) / prev * 100, 2) if prev else 0,
-                "high": round(info.day_high or price, 2),
-                "low": round(info.day_low or price, 2),
+                "price": price,
+                "prev_close": round(prev_close, 2),
+                "change_pct": round((price - prev_close) / prev_close * 100, 2) if prev_close else 0,
+                "high": round(float(today["High"]), 2),
+                "low": round(float(today["Low"]), 2),
             }
         except Exception as e:
             print(f"[ERROR] Stock quote {ticker} failed: {e}")
             return {}
 
     def get_sensex(self) -> dict:
-        """Fetch SENSEX (BSE) from Yahoo Finance — NSE API doesn't carry BSE data."""
+        """Fetch SENSEX (BSE) via Yahoo Finance history — more accurate than fast_info."""
         try:
             import yfinance as yf
             t = yf.Ticker("^BSESN")
-            info = t.fast_info
-            price = info.last_price or 0
-            prev = info.previous_close or price
+            hist = t.history(period="2d", interval="1d")
+            if hist.empty:
+                return {}
+            today = hist.iloc[-1]
+            prev_close = hist.iloc[-2]["Close"] if len(hist) >= 2 else today["Open"]
+            price = round(float(today["Close"]), 2)
+            open_p = round(float(today["Open"]), 2)
+            high = round(float(today["High"]), 2)
+            low = round(float(today["Low"]), 2)
+            chg = round(price - prev_close, 2)
+            pchg = round(chg / prev_close * 100, 2) if prev_close else 0
             return {
                 "symbol": "S&P BSE SENSEX",
-                "last": round(price, 2),
-                "open": round(info.open or price, 2),
-                "high": round(info.day_high or price, 2),
-                "low": round(info.day_low or price, 2),
-                "pchange": round((price - prev) / prev * 100, 2) if prev else 0,
-                "change": round(price - prev, 2),
+                "last": price,
+                "open": open_p,
+                "high": high,
+                "low": low,
+                "pchange": pchg,
+                "change": chg,
             }
         except Exception as e:
             print(f"[ERROR] SENSEX fetch failed: {e}")
