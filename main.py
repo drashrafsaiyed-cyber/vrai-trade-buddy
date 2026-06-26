@@ -104,6 +104,17 @@ async def job_exit_reminder():
     send_exit_reminder()
 
 
+async def job_keep_alive():
+    """Every 10 min — Ping self to prevent Render free tier spin-down."""
+    try:
+        port = int(os.getenv("PORT", 8000))
+        async with httpx.AsyncClient() as client:
+            await client.get(f"http://localhost:{port}/health", timeout=5)
+        print("[KEEPALIVE] Pinged self — Render instance staying awake")
+    except Exception as e:
+        print(f"[KEEPALIVE] Ping failed: {e}")
+
+
 # ============================================
 # APP LIFECYCLE
 # ============================================
@@ -120,8 +131,9 @@ async def lifespan(app: FastAPI):
     scheduler.add_job(job_exit_reminder, "cron", hour=9, minute=15)
     scheduler.add_job(job_gamma_blast, "interval", minutes=5)
     scheduler.add_job(job_btst_scan, "cron", hour=14, minute=0)
+    scheduler.add_job(job_keep_alive, "interval", minutes=10)
     scheduler.start()
-    print("Scheduler started (8:30 brief / 9:15 exit / 2:00 BTST / 5min gamma)")
+    print("Scheduler started (8:30 brief / 9:15 exit / 2:00 BTST / 5min gamma / 10min keepalive)")
 
     # Start two-way Telegram bot
     try:
