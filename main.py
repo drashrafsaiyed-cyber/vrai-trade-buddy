@@ -105,12 +105,12 @@ async def job_exit_reminder():
 
 
 async def job_keep_alive():
-    """Every 10 min — Ping self to prevent Render free tier spin-down."""
+    """Every 10 min — Ping public URL so Render spin-down detector sees activity."""
     try:
-        port = int(os.getenv("PORT", 8000))
+        url = os.getenv("RENDER_EXTERNAL_URL", "https://vrai-trade-buddy.onrender.com")
         async with httpx.AsyncClient() as client:
-            await client.get(f"http://localhost:{port}/health", timeout=5)
-        print("[KEEPALIVE] Pinged self — Render instance staying awake")
+            r = await client.get(f"{url}/health", timeout=10)
+        print(f"[KEEPALIVE] Pinged {url} — status {r.status_code}")
     except Exception as e:
         print(f"[KEEPALIVE] Ping failed: {e}")
 
