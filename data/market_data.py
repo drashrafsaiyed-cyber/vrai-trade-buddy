@@ -61,6 +61,7 @@ class MarketDataFetcher:
                     }
         except Exception as e:
             print(f"[ERROR] Index quote failed: {e}")
+        return {}
 
     def get_all_indices(self) -> list:
         """
@@ -164,11 +165,12 @@ class MarketDataFetcher:
         # FII/DII
         fii = self.get_fii_dii_data()
         if fii and fii.get("date"):
-            note = fii.get("note", "NSE")
-            lines.append(f"\nFII/DII ({fii['date']}) [{note}]:")
+            stale_tag = " [STALE — yesterday's data]" if fii.get("stale") else ""
+            lines.append(f"\nFII/DII ({fii['date']}){stale_tag} [NSE Cash+F&O combined]:")
             lines.append(f"  FII: Buy {fii['fii_buy']:,.0f} | Sell {fii['fii_sell']:,.0f} | Net {fii['fii_net']:+,.0f} Cr")
             lines.append(f"  DII: Buy {fii['dii_buy']:,.0f} | Sell {fii['dii_sell']:,.0f} | Net {fii['dii_net']:+,.0f} Cr")
-            lines.append(f"  NOTE: Ye Cash+F&O combined provisional data hai. Cash-only figures alag ho sakte hain.")
+            if fii.get("stale"):
+                lines.append(f"  WARNING: Ye kal ka data hai, aaj ka available nahi hai abhi.")
 
         # Extra stocks if requested
         if extra_stocks:
@@ -182,7 +184,6 @@ class MarketDataFetcher:
                     )
 
         return "\n".join(lines)
-        return {}
 
     def get_option_chain(self, symbol: str = "NIFTY") -> dict:
         """
@@ -240,7 +241,7 @@ class MarketDataFetcher:
 
         # Strategy 2: curl subprocess with cookie jar (handles Akamai JS challenge better)
         try:
-            import tempfile, os
+            import tempfile
             cookie_file = os.path.join(tempfile.gettempdir(), "nse_cookies.txt")
             curl_ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
@@ -431,10 +432,13 @@ class MarketDataFetcher:
                 result = self._parse_fii_dii_list(data)
                 if not result:
                     continue
-                # Log if date doesn't match today (stale data warning)
+                # Mark stale if date doesn't match today
                 if result["date"] and today_str.lower() not in result["date"].lower():
-                    print(f"[WARN] FII/DII date mismatch: got {result['date']}, today {today_str}")
-                print(f"[INFO] FII/DII from {url}: FII={result['fii_net']:+.0f} DII={result['dii_net']:+.0f} ({result['date']})")
+                    print(f"[WARN] FII/DII stale: got {result['date']}, today {today_str}")
+                    result["stale"] = True
+                else:
+                    result["stale"] = False
+                print(f"[INFO] FII/DII: FII={result['fii_net']:+.0f} DII={result['dii_net']:+.0f} ({result['date']}) stale={result['stale']}")
                 return result
             except Exception as e:
                 print(f"[WARN] FII/DII endpoint {url} failed: {e}")

@@ -32,10 +32,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         from data.market_data import fetcher
         from core.brain import brain
-        from main import _extract_stock_mentions
+        from utils import extract_stock_mentions
 
         # Detect stock mentions + build full market context
-        stocks = _extract_stock_mentions(user_msg)
+        stocks = extract_stock_mentions(user_msg)
         context = fetcher.build_market_context(extra_stocks=stocks)
         enriched = context + "\n\nUser: " + user_msg
 
